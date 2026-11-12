@@ -179,11 +179,9 @@ async def extreure_i_crear_m3u(url_principal, selector_canals, nom_arxiu_m3u="ll
                 
                 f.write(f'#EXTINF:-1 {atributs},{item["canal"]}\n')
                 
-                # Cabeceras por si el reproductor las necesita
-                f.write(f'#EXTVLCOPT:http-referrer={url_principal}\n')
-                f.write(f'#EXTVLCOPT:http-user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\n')
+                # ¡AQUÍ ESTÁ EL CAMBIO! Hemos quitado las líneas de #EXTVLCOPT
+                # para que quede exactamente como a ti te funciona.
                 
-                # Guardamos la URL COMPLETA (con el token fresco generado por GitHub)
                 f.write(f'{item["m3u8"]}\n')
 
         print(f"✅ Arxiu '{nom_arxiu_m3u}' creat amb èxit!")
