@@ -6,12 +6,8 @@ from playwright.async_api import async_playwright
 
 async def extreure_logo(pagina, url_canal, url_principal, img_principal=None):
     """Intenta obtenir el logo del canal amb diverses estratègies en cascada."""
-
-    # 1. Si ja el tenim de la pàgina principal, el fem servir
     if img_principal:
         return urljoin(url_principal, img_principal)
-
-    # 2. Meta og:image de la pàgina del canal
     try:
         og = await pagina.query_selector('meta[property="og:image"]')
         if og:
@@ -21,29 +17,17 @@ async def extreure_logo(pagina, url_canal, url_principal, img_principal=None):
     except Exception:
         pass
 
-    # 3. Primera <img> dins del contenidor del reproductor / capçalera
-    selectors_img = [
-        "video[poster]",
-        ".player img",
-        ".logo img",
-        "header img",
-        ".channel img",
-        "img",
-    ]
+    selectors_img = ["video[poster]", ".player img", ".logo img", "header img", ".channel img", "img"]
     for sel in selectors_img:
         try:
             el = await pagina.query_selector(sel)
             if el:
-                if sel == "video[poster]":
-                    src = await el.get_attribute("poster")
-                else:
-                    src = await el.get_attribute("src") or await el.get_attribute("data-src")
+                src = await el.get_attribute("poster") if sel == "video[poster]" else (await el.get_attribute("src") or await el.get_attribute("data-src"))
                 if src and not src.startswith("data:"):
                     return urljoin(url_canal, src)
         except Exception:
             continue
 
-    # 4. Favicon com a últim recurs
     try:
         icon = await pagina.query_selector('link[rel*="icon"]')
         if icon:
@@ -52,7 +36,6 @@ async def extreure_logo(pagina, url_canal, url_principal, img_principal=None):
                 return urljoin(url_canal, href)
     except Exception:
         pass
-
     return None
 
 
@@ -68,7 +51,6 @@ async def extreure_i_crear_m3u(url_principal, selector_canals, nom_arxiu_m3u="ll
         await page.goto(url_principal, timeout=60000)
         await page.wait_for_timeout(3000)
 
-        # 1. Extreure enllaços, títols I imatges de la pàgina principal
         canals_info = []
         elements = await page.query_selector_all(selector_canals)
         print(f"S'han trobat {len(elements)} canals a la pàgina principal.")
@@ -79,26 +61,19 @@ async def extreure_i_crear_m3u(url_principal, selector_canals, nom_arxiu_m3u="ll
             if not href:
                 continue
 
-            # Intentem capturar la imatge associada al canal a la pàgina principal
             img_src = None
             try:
-                # Busquem una <img> dins del propi element o al seu pare
                 img_el = await el.query_selector("img")
                 if not img_el:
-                    # Alguns llocs posen la imatge al contenidor pare
                     pare = await el.evaluate_handle("e => e.parentElement")
                     if pare:
                         img_el = await pare.query_selector("img")
                 if img_el:
-                    img_src = (
-                        await img_el.get_attribute("src")
-                        or await img_el.get_attribute("data-src")
-                        or await img_el.get_attribute("data-lazy-src")
-                    )
+                    img_src = (await img_el.get_attribute("src") or await img_el.get_attribute("data-src") or await img_el.get_attribute("data-lazy-src"))
                     if img_src and img_src.startswith("data:"):
                         img_src = None
             except Exception:
-                img_src = None
+                pass
 
             canals_info.append({
                 "titol": titol,
@@ -106,10 +81,8 @@ async def extreure_i_crear_m3u(url_principal, selector_canals, nom_arxiu_m3u="ll
                 "img": img_src,
             })
 
-        print(f"S'han recopilat {len(canals_info)} enllaços per visitar.")
         await page.close()
 
-        # 2. Visitar cada enllaç
         for i, canal in enumerate(canals_info):
             titol_canal = canal["titol"]
             url_canal = canal["url"]
@@ -127,43 +100,30 @@ async def extreure_i_crear_m3u(url_principal, selector_canals, nom_arxiu_m3u="ll
                         link_m3u8_canal = request.url
 
                 nova_pagina.on("request", handle_request)
-
                 await nova_pagina.goto(url_canal, timeout=30000)
                 await nova_pagina.wait_for_timeout(5000)
 
-                # Fallback regex per al m3u8
-                if not link_m3u8_canal:
-                    content = await nova_pagina.content()
-                    match = re.search(r"https?://[^\s'\"]+?\.m3u8[^\s'\"]*", content)
-                    if match:
-                        link_m3u8_canal = match.group(0)
+                logo_canal = await extreure_logo(nova_pagina, url_canal, url_principal, canal.get("img"))
 
-                # Buscar el logo
-                logo_canal = await extreure_logo(
-                    nova_pagina, url_canal, url_principal, canal.get("img")
-                )
-
+                # Si trobem l'enllaç, el netegem de token per evitar bloquejos d'IP
                 if link_m3u8_canal:
-                    print(f"  -> M3U8 trobat: {link_m3u8_canal}")
-                    print(f"  -> Logo: {logo_canal or '(no trobat)'}")
+                    enllac_net = link_m3u8_canal.split('?')[0]
+                    print(f"  -> M3U8 netejat: {enllac_net}")
                     llista_resultats.append({
                         "canal": titol_canal,
-                        "m3u8": link_m3u8_canal,
+                        "m3u8": enllac_net,
                         "logo": logo_canal,
                     })
                 else:
                     print("  -> No s'ha trobat cap enllaç .m3u8.")
 
                 await nova_pagina.close()
-
             except Exception as e:
                 print(f"  -> Error en processar el canal: {e}")
-
             await asyncio.sleep(1)
 
         await browser.close()
 
-    # 3. Generar el fitxer .m3u
     if llista_resultats:
         print("\n" + "=" * 60)
         print(f"Generant l'arxiu '{nom_arxiu_m3u}' amb {len(llista_resultats)} canals...")
@@ -172,16 +132,10 @@ async def extreure_i_crear_m3u(url_principal, selector_canals, nom_arxiu_m3u="ll
         with open(nom_arxiu_m3u, "w", encoding="utf-8") as f:
             f.write("#EXTM3U\n")
             for item in llista_resultats:
-                # tvg-name i tvg-logo; si no hi ha logo, s'omet l'atribut
                 atributs = f'tvg-name="{item["canal"]}"'
                 if item.get("logo"):
                     atributs += f' tvg-logo="{item["logo"]}"'
-                
                 f.write(f'#EXTINF:-1 {atributs},{item["canal"]}\n')
-                
-                # ¡AQUÍ ESTÁ EL CAMBIO! Hemos quitado las líneas de #EXTVLCOPT
-                # para que quede exactamente como a ti te funciona.
-                
                 f.write(f'{item["m3u8"]}\n')
 
         print(f"✅ Arxiu '{nom_arxiu_m3u}' creat amb èxit!")
